@@ -3,18 +3,22 @@
 RESOURCE=${1-all}
 MATCH='.*' 
 KUBECTL_COMMAND="kubectl get $RESOURCE"
-
-echo RESOURCE: $RESOURCE MATCH: $MATCH
-echo
+PRINT_MATCH="TRUE"
 
 shift
-while getopts ":m" opt; do
+while getopts "m: b" opt; do
 	case $opt in
-		m) MATCH="$2" ;;
+		m) MATCH="${OPTARG}" ;;
+		b) PRINT_MATCH=;; 
 		\?) echo "Invalid option: -$OPTARG" ;;
   	esac
 done
 
+
+if [[ -n $PRINT_MATCH ]] ; then
+echo RESOURCE: $RESOURCE MATCH: $MATCH
+echo
+fi
 
 while read -r line; do
 	name=${line%% *}
