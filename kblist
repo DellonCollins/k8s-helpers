@@ -5,8 +5,11 @@ MATCH='.*'
 KUBECTL_COMMAND="kubectl get $RESOURCE"
 PRINT_MATCH="TRUE"
 
-shift
-while getopts "m: b" opt; do
+usage(){
+	echo Usage: 
+}
+
+while getopts ":m: b" opt; do
 	case $opt in
 		m) MATCH="${OPTARG}" ;;
 		b) PRINT_MATCH=;; 
