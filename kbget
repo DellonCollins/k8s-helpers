@@ -14,31 +14,33 @@ printDebug(){
 main(){
 	local MATCH='.*' 
 	local SCRIPTARGS=()
-	local PASSEDARGS=""
-	local OPTSTRING=":m:p:d"
+	local PASSEDARGS=
+	local OPTSTRING=":dnm:p:"
+	local NAME_ONLY=
 	while [ $OPTIND -le $# ]; do
 		if getopts $OPTSTRING option; then
 			case $option in
 				d) PRINT_DEBUG="TRUE"
-					printDebug -d=TRUE;;
+					printDebug -d="TRUE";;
 				m) MATCH=$OPTARG
 					printDebug -m=$OPTARG;;
+				n) NAME_ONLY="TRUE";;
 				p) PASSEDARGS=$OPTARG
 					printDebug "-p=$OPTARG";;
 				?) printDebug "? - $OPTARG ${!OPTIND} "
-					local optVal=${!OPTIND}
+					local OPTVAL=${!OPTIND}
+					# Assume that unidentified flags are for kubectl (PASSEDARGS)
 					PASSEDARGS+=("-$OPTARG")
-					if [[ ${optVal:0:1} == '-' || -z $optVal ]] ; then
-						printDebug "skip option '$optVal'"	
-					else 
-						printDebug "this is an option '$optVal'"
-						PASSEDARGS+=("$optVal")
+
+					# If the next arg is a flag then let getopts handle parsing
+					if [[ ${OPTVAL:0:1} != '-' && -n $OPTVAL ]] ; then
+						printDebug "this is an option '$OPTVAL'"
+						PASSEDARGS+=("$OPTVAL")
 						((OPTIND++))
-					fi	
-						;;
-				#?) printDebug "what's this? $option $OPTARG";;
+					fi;;
 			esac
 		else
+			# Handle non-flagged positional arguments and increment OPTIND
 			SCRIPTARGS+=("${!OPTIND}")
 			((OPTIND++))
 		fi
@@ -46,7 +48,7 @@ main(){
 	printDebug "passedargs: ${PASSEDARGS[@]}"
 	printDebug "scriptargs: ${SCRIPTARGS[@]}"
 
-	#First positional argument is the kube resource type. Defaults to "all"
+	#First positional argument is the kube resource type. Defaults to "all" if unspecified
 	RESOURCE=${SCRIPTARGS[0]-all}
 
 	#ALl other positonal arguments are dumped to kubectl command
@@ -55,27 +57,29 @@ main(){
 	printDebug "RESOURCE: $KUBECTL_COMMAND MATCH: '$MATCH' NUM_SCRIPT_ARGS: ${#SCRIPTARGS} ${SCRIPTARGS[0]}"
 
 	while read -r line; do
-		NAME=${line%% *} #name is the first column
+		NAME=${line%% *} # Name is the first column
 		
-		#skip the first nline
-		if [[ -z $line || $NAME == NAME ]] ; 
-			then continue; fi
-		
-		if [[ $NAME =~ $MATCH ]] ; then
-			if [[ -z $PASSEDARGS ]] ; then 
-				echo $NAME; continue;
-			fi
-			
-			GET_COMMAND=$( \
-				[[ $RESOURCE == all ]] && \
-				echo "kubectl get $(echo $NAME | sed "s/\//\ /") $PASSEDARGS" || \
-				echo "$KUBECTL_COMMAND $NAME $PASSEDARGS"
-			)	
-
-			echo \# $GET_COMMAND
-			$GET_COMMAND
-			echo 
+		# Skip empty lines, columns, and nonmatches
+		if [[ -z $line || $NAME == NAME || ! $NAME =~ $MATCH ]] ; then
+			continue
 		fi
+
+		# Only print the name if -n is specified, overrides -p
+		if [[ -n $NAME_ONLY ]] ; then 
+			echo $NAME; continue;
+		fi
+		
+		# Handle case where resource is "all" or comma-separated. 
+		GET_COMMAND=$( \
+			[[ $RESOURCE == "all" || $RESOURCE =~ ',' ]] && \
+			echo "kubectl get $(echo $NAME | sed "s/\// /") ${PASSEDARGS[@]}" || \
+			echo "$KUBECTL_COMMAND $NAME ${PASSEDARGS[@]}"
+		)
+		
+
+		echo "# $GET_COMMAND"
+		$GET_COMMAND
+		echo 
 	done < <($KUBECTL_COMMAND)
 }
 
