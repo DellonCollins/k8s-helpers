@@ -11,55 +11,72 @@ printDebug(){
 		echo
 	fi
 }
-
-MATCH='.*' 
-SCRIPTARGS=()
-PASSEDARGS=""
-while [ $OPTIND -le $# ]; do
-        if getopts ":m:p:d" option; then
-                case $option in
-                        d) PRINT_DEBUG="TRUE"
-				printDebug -d=TRUE;;
-                        m) MATCH=$OPTARG
-				printDebug -m=$OPTARG;;
-			p) PASSEDARGS=$OPTARG;;
-                esac
-        else
-                SCRIPTARGS+=("${!OPTIND}")
-                ((OPTIND++))
-        fi
-done
-printDebug "passedargs: ${PASSEDARGS[@]}"
-printDebug "scriptargs: ${SCRIPTARGS[@]}"
-
-#First positional argument is the kube resource type. Defaults to "all"
-RESOURCE=${SCRIPTARGS[0]-all}
-
-#ALl other positonal arguments are dumped to kubectl command
-KUBECTL_COMMAND="kubectl get $RESOURCE"
-KUBECTL_GET_COMMAND="kubectl get"
-printDebug "RESOURCE: $KUBECTL_COMMAND MATCH: '$MATCH' NUM_SCRIPT_ARGS: ${#SCRIPTARGS} ${SCRIPTARGS[0]}"
-
-while read -r line; do
-	NAME=${line%% *} #name is the first column
-	
-	#skip the first nline
-	if [[ -z $line || $NAME == NAME ]] ; 
-		then continue; fi
-	
-	if [[ $NAME =~ $MATCH ]] ; then
-		if [[ -z $PASSEDARGS ]] ; then 
-			echo $NAME; continue;
+main(){
+	local MATCH='.*' 
+	local SCRIPTARGS=()
+	local PASSEDARGS=""
+	local OPTSTRING=":m:p:d"
+	while [ $OPTIND -le $# ]; do
+		if getopts $OPTSTRING option; then
+			case $option in
+				d) PRINT_DEBUG="TRUE"
+					printDebug -d=TRUE;;
+				m) MATCH=$OPTARG
+					printDebug -m=$OPTARG;;
+				p) PASSEDARGS=$OPTARG
+					printDebug "-p=$OPTARG";;
+				?) printDebug "? - $OPTARG ${!OPTIND} "
+					local optVal=${!OPTIND}
+					PASSEDARGS+=("-$OPTARG")
+					if [[ ${optVal:0:1} == '-' || -z $optVal ]] ; then
+						printDebug "skip option '$optVal'"	
+					else 
+						printDebug "this is an option '$optVal'"
+						PASSEDARGS+=("$optVal")
+						((OPTIND++))
+					fi	
+						;;
+				#?) printDebug "what's this? $option $OPTARG";;
+			esac
+		else
+			SCRIPTARGS+=("${!OPTIND}")
+			((OPTIND++))
 		fi
-		
-		GET_COMMAND=$( \
-			[[ $RESOURCE == all ]] && \
-		       	echo "kubectl get $(echo $NAME | sed "s/\//\ /") $PASSEDARGS" || \
-			echo "$KUBECTL_COMMAND $NAME $PASSEDARGS"
-		)	
+	done
+	printDebug "passedargs: ${PASSEDARGS[@]}"
+	printDebug "scriptargs: ${SCRIPTARGS[@]}"
 
-		echo \# $GET_COMMAND
-		$GET_COMMAND
-		echo 
-	fi
-done < <($KUBECTL_COMMAND)
+	#First positional argument is the kube resource type. Defaults to "all"
+	RESOURCE=${SCRIPTARGS[0]-all}
+
+	#ALl other positonal arguments are dumped to kubectl command
+	KUBECTL_COMMAND="kubectl get $RESOURCE"
+	KUBECTL_GET_COMMAND="kubectl get"
+	printDebug "RESOURCE: $KUBECTL_COMMAND MATCH: '$MATCH' NUM_SCRIPT_ARGS: ${#SCRIPTARGS} ${SCRIPTARGS[0]}"
+
+	while read -r line; do
+		NAME=${line%% *} #name is the first column
+		
+		#skip the first nline
+		if [[ -z $line || $NAME == NAME ]] ; 
+			then continue; fi
+		
+		if [[ $NAME =~ $MATCH ]] ; then
+			if [[ -z $PASSEDARGS ]] ; then 
+				echo $NAME; continue;
+			fi
+			
+			GET_COMMAND=$( \
+				[[ $RESOURCE == all ]] && \
+				echo "kubectl get $(echo $NAME | sed "s/\//\ /") $PASSEDARGS" || \
+				echo "$KUBECTL_COMMAND $NAME $PASSEDARGS"
+			)	
+
+			echo \# $GET_COMMAND
+			$GET_COMMAND
+			echo 
+		fi
+	done < <($KUBECTL_COMMAND)
+}
+
+main "$@"
