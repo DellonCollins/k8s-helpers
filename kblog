@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+
+#TODO add usage
+usage(){
+	echo Usage: 
+}
+
+printDebug(){
+	if [[ -n $PRINT_DEBUG ]] ; then
+		echo $@
+		echo
+	fi
+}
+
+display_logs(){
+	local kb_objects=($@)
+	for kb_object in ${kb_objects[@]}; do
+		command="kubectl logs $kb_object" 
+		printDebug $command
+		echo "# $kb_object" 
+		$command | tail -n 10
+		echo
+	done
+}
+
+main(){
+	local MATCH='.*' 
+	local SCRIPTARGS=()
+	local PASSEDARGS=
+	local OPTSTRING=":hdm:p:"
+	local NAME_ONLY=
+	while [ $OPTIND -le $# ]; do
+		if getopts $OPTSTRING option; then
+			case $option in
+				h) 	usage ; exit 1;;
+				d) 	PRINT_DEBUG="TRUE"
+					printDebug -d="TRUE";;
+				m) 	MATCH=$OPTARG
+					printDebug -m=$OPTARG;;
+				p) 	PASSEDARGS=$OPTARG
+					printDebug "-p=\"$OPTARG\"";;
+				?) 	printDebug "? - $OPTARG ${!OPTIND} "
+					local OPTVAL=${!OPTIND}
+					# Assume that unidentified flags are for kubectl (PASSEDARGS)
+					PASSEDARGS+=("-$OPTARG")
+
+					# If the next arg is a flag then let getopts handle parsing
+					if [[ ${OPTVAL:0:1} != '-' && -n $OPTVAL ]] ; then
+						printDebug "this is an option '$OPTVAL'"
+						PASSEDARGS+=("$OPTVAL")
+						((OPTIND++))
+					fi;;
+			esac
+		else
+			# Handle non-flagged positional arguments and increment OPTIND
+			SCRIPTARGS+=("${!OPTIND}")
+			((OPTIND++))
+		fi
+	done
+	
+	local KBGET_COMMAND="kbget $SCRIPTARGS -m $MATCH -n -p $PASSEDARGS"
+	printDebug $KBGET_COMMAND
+	local line resource_list=() 
+	
+	while read line; do
+		resource_list+=($line)
+	done < <($KBGET_COMMAND)
+	
+	
+	display_logs "${resource_list[@]}"
+
+}
+
+main "$@"
