@@ -18,6 +18,7 @@ display_logs(){
 		command="kubectl logs $kb_object" 
 		printDebug $command
 		echo "# $kb_object" 
+		#TODO: add flag for tail
 		$command | tail -n 10
 		echo
 	done
@@ -57,7 +58,16 @@ main(){
 			((OPTIND++))
 		fi
 	done
-	${SCRIPTARGS-"pod,service,deployment,statefulset"}
+	
+	#TODO: add flag for specifying location of kbget 
+	#Exit if kbget not available
+	if [[ ! $(which kbget) ]] ; then
+		echo "kbget not found;" >&2 
+		exit 1
+	fi
+	
+	# Set default resource if none are passed
+	SCRIPTARGS=${SCRIPTARGS[0]-"pod,service,deployment,statefulset"}
 	local KBGET_COMMAND="kbget $SCRIPTARGS -m $MATCH -n -p $PASSEDARGS"
 	printDebug $KBGET_COMMAND
 	local line resource_list=() 
