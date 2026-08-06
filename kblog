@@ -12,7 +12,7 @@ printDebug(){
 	fi
 }
 
-display_logs(){
+print_logs(){
 	local kb_objects=($@)
 	for kb_object in ${kb_objects[@]}; do
 		command="kubectl logs $kb_object" 
@@ -21,6 +21,46 @@ display_logs(){
 		#TODO: add flag for tail
 		$command | tail -n 10
 		echo
+	done
+}
+
+# (expression) && cmd || cmd is used as a ternary operation
+# && does not continue evaluation if the first condition is TRUE (exit code 0)
+display_resources(){
+	local resources=($@) length=${#resources[@]}
+	local selected_line=0 line_end i
+		
+	printf "\e[?25l" # Hide cursor
+	
+	# Use arrow keys to select resources for listing
+	while true; do
+		for (( i=0; i < $length; i++ )); do
+			# all lines except the last end in a new line
+			line_end=$( (( i + 1 < $length )) && echo "\n" || echo "" ) 
+			
+			if (( i == selected_line )) ; then
+				printf ">%s%b" ${resources[$i]} $line_end
+			else
+				printf " %s%b" ${resources[$i]} $line_end
+			fi
+		done
+	
+		read -rs -n 1 key
+		if [[ $key == $'\e' ]] ; then
+			read -rs -n 2 key
+		fi
+		case $key in
+			'q') echo QUITTING ; exit ;;
+			'[A') (( selected_line > 0 )) && (( selected_line-- )) ;; # up
+			'[B') (( selected_line < $length - 1 )) && (( selected_line++ )) ;; # down
+			'[D') echo LEFT ;; # left
+			'[C') echo RIGHT ;; # right
+			*) >&2 echo 'ERR bad input'; exit 1  ;;
+		esac
+		
+		# Rest cursor position
+		printf "\e[E"
+		printf "\e[%sA" $((( $length-1 )))
 	done
 }
 
@@ -77,7 +117,7 @@ main(){
 	done < <($KBGET_COMMAND)
 	
 	
-	display_logs "${resource_list[@]}"
+	display_resources "${resource_list[@]}"
 
 }
 
