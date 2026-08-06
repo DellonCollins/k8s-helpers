@@ -15,11 +15,12 @@ main(){
 	local MATCH='.*' 
 	local SCRIPTARGS=()
 	local PASSEDARGS=
-	local OPTSTRING=":dnm:p:"
+	local OPTSTRING=":hdnm:p:"
 	local NAME_ONLY=
 	while [ $OPTIND -le $# ]; do
 		if getopts $OPTSTRING option; then
 			case $option in
+				h) usage ; exit 1;;
 				d) PRINT_DEBUG="TRUE"
 					printDebug -d="TRUE";;
 				m) MATCH=$OPTARG
@@ -53,9 +54,9 @@ main(){
 
 	#ALl other positonal arguments are dumped to kubectl command
 	KUBECTL_COMMAND="kubectl get $RESOURCE"
-	KUBECTL_GET_COMMAND="kubectl get"
 	printDebug "RESOURCE: $KUBECTL_COMMAND MATCH: '$MATCH' NUM_SCRIPT_ARGS: ${#SCRIPTARGS} ${SCRIPTARGS[0]}"
-
+	
+	local line
 	while read -r line; do
 		NAME=${line%% *} # Name is the first column
 		
@@ -70,7 +71,7 @@ main(){
 		fi
 		
 		# Handle case where resource is "all" or comma-separated. 
-		GET_COMMAND=$( \
+		local GET_COMMAND=$( \
 			[[ $RESOURCE == "all" || $RESOURCE =~ ',' ]] && \
 			echo "kubectl get $(echo $NAME | sed "s/\// /") ${PASSEDARGS[@]}" || \
 			echo "$KUBECTL_COMMAND $NAME ${PASSEDARGS[@]}"
