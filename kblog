@@ -5,7 +5,7 @@ usage(){
 	echo Usage: 
 }
 
-printDebug(){
+print_debug(){
 	if [[ -n $PRINT_DEBUG ]] ; then
 		echo $@
 		echo
@@ -16,7 +16,7 @@ print_logs(){
 	local kb_objects=($@)
 	for kb_object in ${kb_objects[@]}; do
 		command="kubectl logs $kb_object" 
-		printDebug $command
+		print_debug $command
 		echo "# $kb_object" 
 		#TODO: add flag for tail
 		$command | tail -n 10
@@ -26,42 +26,82 @@ print_logs(){
 
 # (expression) && cmd || cmd is used as a ternary operation
 # && does not continue evaluation if the first condition is TRUE (exit code 0)
+
+HIGHLIGHT="\e[1;30;47m"
+NO_HIGHLIGHT="\e[0m"
+CURSOR_INVISIBLE="\e[?25l"
+CURSOR_VISIBLE="\e[?25h"
+CURSOR_LINE_START="\e[E"
+ERASE_END="\e[0J"
+ERASE_LINE="\e[2K"
+
+
+erase_lines(){
+	num_lines=$1
+	printf $CURSOR_LINE_START # Move cursor to start of line
+	printf "\e[%sA" $num_lines # Move the cursor up 1 line
+}
+
 display_resources(){
+	printf $CURSOR_INVISIBLE
 	local resources=($@) length=${#resources[@]}
-	local selected_line=0 line_end i
-		
-	printf "\e[?25l" # Hide cursor
+	local selected_resources=() selected_line=0 line_end i
 	
 	# Use arrow keys to select resources for listing
-	while true; do
+	while [[ "TRUE" ]] ; do	
 		for (( i=0; i < $length; i++ )); do
 			# all lines except the last end in a new line
 			line_end=$( (( i + 1 < $length )) && echo "\n" || echo "" ) 
 			
+			# set style for selected lines
+			color_mode=$( [[ "${selected_resources[*]}" =~ ${resources[$i]} ]] && echo $HIGHLIGHT  || echo $NO_HIGHLIGHT )
+			
 			if (( i == selected_line )) ; then
-				printf ">%s%b" ${resources[$i]} $line_end
+				printf "$color_mode>%s %b" ${resources[$i]} $line_end
 			else
-				printf " %s%b" ${resources[$i]} $line_end
+				printf "$color_mode %s %b" ${resources[$i]} $line_end
 			fi
 		done
 	
 		read -rs -n 1 key
 		if [[ $key == $'\e' ]] ; then
 			read -rs -n 2 key
+		# Return selected_resources when enter is pressed
+		elif [[ ${key} == $'\0A' ]] ; then
+			erase_lines $length
+			printf $NO_HIGHLIGHT
+			printf $ERASE_END
+			break
 		fi
+		
+		
+		selected_resource=${resources[$selected_line]}
+		
 		case $key in
 			'q') echo QUITTING ; exit ;;
-			'[A') (( selected_line > 0 )) && (( selected_line-- )) ;; # up
-			'[B') (( selected_line < $length - 1 )) && (( selected_line++ )) ;; # down
-			'[D') echo LEFT ;; # left
-			'[C') echo RIGHT ;; # right
-			*) >&2 echo 'ERR bad input'; exit 1  ;;
+			# up: move selector up
+			'[A') (( selected_line > 0 )) && (( selected_line-- )) ;; 
+			# down: move selector down
+			'[B') (( selected_line < $length - 1 )) && (( selected_line++ )) ;; 
+			# left: deselect resource, add to selected_resources
+			'[D') selected_resources=( "${selected_resources[@]/$selected_resource}" ) ;; 
+			# right: reselect resource, remove from selected_resources
+			'[C') selected_resources+=($selected_resource)  ;; 
+			*) >/dev/null echo 'ERR bad input: $key' ; exit 1  ;;
 		esac
 		
-		# Rest cursor position
-		printf "\e[E"
-		printf "\e[%sA" $((( $length-1 )))
+		erase_lines $(( $length ))
 	done
+	
+	
+	echo
+	print_logs "${selected_resources[*]}"
+	
+}
+
+reset_(){
+	printf $CURSOR_VISIBLE
+	printf $NO_HIGHLIGHT
 }
 
 main(){
@@ -75,19 +115,19 @@ main(){
 			case $option in
 				h) 	usage ; exit 1;;
 				d) 	PRINT_DEBUG="TRUE"
-					printDebug -d="TRUE";;
+					print_debug -d="TRUE";;
 				m) 	MATCH=$OPTARG
-					printDebug -m=$OPTARG;;
+					print_debug -m=$OPTARG;;
 				p) 	PASSEDARGS=$OPTARG
-					printDebug "-p=\"$OPTARG\"";;
-				?) 	printDebug "? - $OPTARG ${!OPTIND} "
+					print_debug "-p=\"$OPTARG\"";;
+				?) 	print_debug "? - $OPTARG ${!OPTIND} "
 					local OPTVAL=${!OPTIND}
 					# Assume that unidentified flags are for kubectl (PASSEDARGS)
 					PASSEDARGS+=("-$OPTARG")
 
 					# If the next arg is a flag then let getopts handle parsing
 					if [[ ${OPTVAL:0:1} != '-' && -n $OPTVAL ]] ; then
-						printDebug "this is an option '$OPTVAL'"
+						print_debug "this is an option '$OPTVAL'"
 						PASSEDARGS+=("$OPTVAL")
 						((OPTIND++))
 					fi;;
@@ -109,7 +149,7 @@ main(){
 	# Set default resource if none are passed
 	SCRIPTARGS=${SCRIPTARGS[0]-"pod,service,deployment,statefulset"}
 	local KBGET_COMMAND="kbget $SCRIPTARGS -m $MATCH -n -p $PASSEDARGS"
-	printDebug $KBGET_COMMAND
+	print_debug $KBGET_COMMAND
 	local line resource_list=() 
 	
 	while read line; do
@@ -117,8 +157,9 @@ main(){
 	done < <($KBGET_COMMAND)
 	
 	
-	display_resources "${resource_list[@]}"
-
+	trap reset_ EXIT # Make cursor visible
+	
+	display_resources "${resource_list[*]}"
 }
 
 main "$@"
