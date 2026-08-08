@@ -2,7 +2,10 @@
 
 #TODO add usage
 usage(){
-	echo Usage: 
+read -r -d '' VAR <<'EOF'
+usage: kblog -d -m -p []
+EOF
+echo "$VAR"
 }
 
 print_debug(){
@@ -133,7 +136,7 @@ reset_term(){
 }
 
 main(){
-	local MATCH='.*' 
+	local MATCH="\'.*\'" 
 	local SCRIPTARGS=()
 	local PASSEDARGS=
 	local OPTSTRING=":hdm:p:"
@@ -152,7 +155,7 @@ main(){
 					if [[ ${OPTVAL:0:1} != '-' && -n $OPTVAL ]] ; then
 						PASSEDARGS+=("$OPTVAL")
 						((OPTIND++))
-					fi;;
+					fi ;;
 			esac
 		else
 			# Handle non-flagged positional arguments and increment OPTIND
@@ -180,7 +183,7 @@ main(){
 	print_debug "KBGET COMMAND: $KBGET_COMMAND\n"
 	print_debug "\n"
 	local line resource_list=() 
-	
+		
 	while read line; do
 		resource_list+=($line)
 	done < <($KBGET_COMMAND)
