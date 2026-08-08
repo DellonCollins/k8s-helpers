@@ -3,7 +3,25 @@
 #TODO add usage
 usage(){
 read -r -d '' VAR <<'EOF'
-usage: kblog -d -m -p []
+usage: kblog [OPTIONS] [kubectl_resource_types...]
+
+No options are required 
+Options:
+  -d print debug information
+  -m a regex to match resources against
+
+If a kubectl_resource_type is not specified, then pod,service,deployment,statefulset are set as default
+
+If multiple resource types are specified, then resources names are prepended with their resources types
+ex. kblog 
+    service/my-service
+    pod/app-1
+
+Specifying a single resource type will list the resources names
+ex. kblog pod -m "app"
+    app-1
+    app-2
+    app-3
 EOF
 echo "$VAR"
 }
@@ -39,14 +57,10 @@ ERASE_LINE="\e[2K"
 
 erase_lines(){
 	local num_lines=$1
-	
-	printf $CURSOR_LINE_START # Move cursor to start of line
-	#local i
-	#for (( i=0; i < $num_lines; i++ )) ; do
-	#	printf "\e[1A"
-	#done
-	printf "\e[%sA" $num_lines # Move the cursor up N lines
-	
+	# Move cursor to start of line
+	printf $CURSOR_LINE_START 
+	# Move the cursor up N lines if we have more that one line to rewrite
+	(( $num_lines > 1 )) && printf "\e[%sA" $num_lines 
 	printf $ERASE_END
 }
 
@@ -69,7 +83,7 @@ display_resources(){
 			
 			# Invert colors for the selected lines.
 			if [[ i -eq selected_line ]] ; then
-				printf "$color_mode>%s%b " ${resources[$i]} $NO_HIGHLIGHT 
+				printf "$color_mode> %s%b " ${resources[$i]} $NO_HIGHLIGHT 
 			else
 				printf "$color_mode %s%b " ${resources[$i]} $NO_HIGHLIGHT 
 			fi
@@ -80,12 +94,12 @@ display_resources(){
 			curr_line_num=${CURPOS%;*}	
 			# Update prev line for next pass
 			pos="prev  $prev_line_num : curr $curr_line_num "
-			#print_debug "$pos"
+			print_debug "$pos"
 			if [[ $curr_line_num -eq $prev_line_num ]] ; then
 				at_end_of_term=$curr_line_num
 			fi
 			
-			#print_debug " | at end: $at_end_of_term"
+			print_debug " | at end: $at_end_of_term"
 			prev_line_num=$curr_line_num
 			
 			printf "%b" $line_end
@@ -121,7 +135,7 @@ display_resources(){
 		else 
 			erase_lines $(( $length ))
 		fi
-		
+			
 	done
 	
 	
@@ -139,23 +153,15 @@ main(){
 	local MATCH="\'.*\'" 
 	local SCRIPTARGS=()
 	local PASSEDARGS=
-	local OPTSTRING=":hdm:p:"
+	local OPTSTRING="hdm:"
 	local NAME_ONLY=
 	while [ $OPTIND -le $# ]; do
 		if getopts $OPTSTRING option; then
 			case $option in
-				h) 	usage ; exit 1;;
+				h) 	usage ; exit ;;
 				d) 	PRINT_DEBUG="TRUE" ;;
 				m) 	MATCH=$OPTARG ;;
-				p) 	PASSEDARGS=$OPTARG ;;
-				?) 	local OPTVAL=${!OPTIND}
-					# Assume that unidentified flags are for kubectl (PASSEDARGS)
-					PASSEDARGS+=("-$OPTARG")
-					# If the next arg is a flag then let getopts handle parsing
-					if [[ ${OPTVAL:0:1} != '-' && -n $OPTVAL ]] ; then
-						PASSEDARGS+=("$OPTVAL")
-						((OPTIND++))
-					fi ;;
+				?) usage; exit 1 ;;
 			esac
 		else
 			# Handle non-flagged positional arguments and increment OPTIND
