@@ -35,20 +35,41 @@ CURSOR_LINE_START="\e[E"
 ERASE_END="\e[0J"
 ERASE_LINE="\e[2K"
 
+get_cur_pos(){
+	
+	echo -en "\e[6n"
+	read -sdR CURPOS
+	CURPOS=${CURPOS#*[}
+	echo -n ${CURPOS%;*} ${CURPOS#*;}
+}
 
 erase_lines(){
-	num_lines=$1
-	printf $CURSOR_LINE_START # Move cursor to start of line
-	printf "\e[%sA" $num_lines # Move the cursor up 1 line
+	local num_lines=$1
+	#echo $num_lines; echo $num_lines
+	#echo $num_lines; echo $num_lines
+	#echo $num_lines; echo $num_lines
+	#printf $CURSOR_LINE_START # Move cursor to start of line
+	#printf "\e[%sA" $num_lines # Move the cursor up N lines
+	
+	local i
+	printf $CURSOR_LINE_START
+	for (( i=0; i < $num_lines; i++ )) ; do
+		printf "\e[1A"
+	done
+	
+	printf $ERASE_END
 }
 
 display_resources(){
 	printf $CURSOR_INVISIBLE
 	local resources=($@) length=${#resources[@]}
 	local selected_resources=() selected_line=0 line_end i
+	local curr_line_num prev_line_num at_end_of_term
 	
 	# Use arrow keys to select resources for listing
 	while [[ "TRUE" ]] ; do	
+		unset prev_line_num
+		
 		for (( i=0; i < $length; i++ )); do
 			# all lines except the last end in a new line
 			line_end=$( (( i + 1 < $length )) && echo "\n" || echo "" ) 
@@ -56,50 +77,70 @@ display_resources(){
 			# set style for selected lines
 			color_mode=$( [[ "${selected_resources[*]}" =~ ${resources[$i]} ]] && echo $HIGHLIGHT  || echo $NO_HIGHLIGHT )
 			
-			if (( i == selected_line )) ; then
-				printf "$color_mode>%s %b" ${resources[$i]} $line_end
+			if [[ i -eq selected_line ]] ; then
+				printf "$color_mode>%s%b " ${resources[$i]} $NO_HIGHLIGHT 
 			else
-				printf "$color_mode %s %b" ${resources[$i]} $line_end
+				printf "$color_mode %s%b " ${resources[$i]} $NO_HIGHLIGHT 
 			fi
-		done
-	
+			
+			# Get the cursor position. If it doesn't increase then we are writing lines at the end of the terminal.
+			# For some reason the this causes one more line to be erased than when we have space below
+			
+			# Update prev line for next pass
+			echo -en "\e[6n" ; read -sdR CURPOS; CURPOS=${CURPOS#*[}
+			curr_line_num=${CURPOS%;*}	
+			pos="prev  $prev_line_num : curr $curr_line_num "
+			#echo -n $pos
+			if [[ $curr_line_num -eq $prev_line_num ]] ; then
+				at_end_of_term=$curr_line_num
+			fi
+			
+			#echo -n " | at end: $at_end_of_term"
+			prev_line_num=$curr_line_num
+			
+			printf "%b" $line_end
+		done		
+		
 		read -rs -n 1 key
 		if [[ $key == $'\e' ]] ; then
 			read -rs -n 2 key
 		# Return selected_resources when enter is pressed
 		elif [[ ${key} == $'\0A' ]] ; then
-			erase_lines $length
-			printf $NO_HIGHLIGHT
-			printf $ERASE_END
+			reset_term
 			break
 		fi
 		
-		
 		selected_resource=${resources[$selected_line]}
-		
+
 		case $key in
 			'q') echo QUITTING ; exit ;;
 			# up: move selector up
 			'[A') (( selected_line > 0 )) && (( selected_line-- )) ;; 
 			# down: move selector down
 			'[B') (( selected_line < $length - 1 )) && (( selected_line++ )) ;; 
-			# left: deselect resource, add to selected_resources
+			# left: deselect resource, removed fromselected_resources
 			'[D') selected_resources=( "${selected_resources[@]/$selected_resource}" ) ;; 
-			# right: reselect resource, remove from selected_resources
-			'[C') selected_resources+=($selected_resource)  ;; 
+			# right: reselect resource, add to selected_resources
+			'[C') selected_resources+=( "$selected_resource" ) ;; 
 			*) >/dev/null echo 'ERR bad input: $key' ; exit 1  ;;
 		esac
 		
-		erase_lines $(( $length ))
+		# handle end of term BS
+		if [[ -n $at_end_of_term ]] && (( $at_end_of_term == $curr_line_num )) ; then
+			erase_lines $(( $length  - 1))
+		else 
+			erase_lines $(( $length ))
+		fi
+		
 	done
 	
 	
 	echo
 	print_logs "${selected_resources[*]}"
-	
 }
 
-reset_(){
+reset_term(){
+	printf $ERASE_END
 	printf $CURSOR_VISIBLE
 	printf $NO_HIGHLIGHT
 }
@@ -156,8 +197,12 @@ main(){
 		resource_list+=($line)
 	done < <($KBGET_COMMAND)
 	
+	if [[ ${#resource_list} == 0 ]] ; then
+		echo "NO RESOURCES MATCHED" >&2
+		exit
+	fi
 	
-	trap reset_ EXIT # Make cursor visible
+	trap reset_term EXIT # Make cursor visible
 	
 	display_resources "${resource_list[*]}"
 }
