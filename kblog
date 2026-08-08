@@ -7,8 +7,7 @@ usage(){
 
 print_debug(){
 	if [[ -n $PRINT_DEBUG ]] ; then
-		echo $@
-		echo
+		printf "$@"
 	fi
 }
 
@@ -35,27 +34,15 @@ CURSOR_LINE_START="\e[E"
 ERASE_END="\e[0J"
 ERASE_LINE="\e[2K"
 
-get_cur_pos(){
-	
-	echo -en "\e[6n"
-	read -sdR CURPOS
-	CURPOS=${CURPOS#*[}
-	echo -n ${CURPOS%;*} ${CURPOS#*;}
-}
-
 erase_lines(){
 	local num_lines=$1
-	#echo $num_lines; echo $num_lines
-	#echo $num_lines; echo $num_lines
-	#echo $num_lines; echo $num_lines
-	#printf $CURSOR_LINE_START # Move cursor to start of line
-	#printf "\e[%sA" $num_lines # Move the cursor up N lines
 	
-	local i
-	printf $CURSOR_LINE_START
-	for (( i=0; i < $num_lines; i++ )) ; do
-		printf "\e[1A"
-	done
+	printf $CURSOR_LINE_START # Move cursor to start of line
+	#local i
+	#for (( i=0; i < $num_lines; i++ )) ; do
+	#	printf "\e[1A"
+	#done
+	printf "\e[%sA" $num_lines # Move the cursor up N lines
 	
 	printf $ERASE_END
 }
@@ -77,6 +64,7 @@ display_resources(){
 			# set style for selected lines
 			color_mode=$( [[ "${selected_resources[*]}" =~ ${resources[$i]} ]] && echo $HIGHLIGHT  || echo $NO_HIGHLIGHT )
 			
+			# Invert colors for the selected lines.
 			if [[ i -eq selected_line ]] ; then
 				printf "$color_mode>%s%b " ${resources[$i]} $NO_HIGHLIGHT 
 			else
@@ -84,18 +72,17 @@ display_resources(){
 			fi
 			
 			# Get the cursor position. If it doesn't increase then we are writing lines at the end of the terminal.
-			# For some reason the this causes one more line to be erased than when we have space below
-			
-			# Update prev line for next pass
+			# For some reason moving up a row acts differently at the bottom of the screen
 			echo -en "\e[6n" ; read -sdR CURPOS; CURPOS=${CURPOS#*[}
 			curr_line_num=${CURPOS%;*}	
+			# Update prev line for next pass
 			pos="prev  $prev_line_num : curr $curr_line_num "
-			#echo -n $pos
+			#print_debug "$pos"
 			if [[ $curr_line_num -eq $prev_line_num ]] ; then
 				at_end_of_term=$curr_line_num
 			fi
 			
-			#echo -n " | at end: $at_end_of_term"
+			#print_debug " | at end: $at_end_of_term"
 			prev_line_num=$curr_line_num
 			
 			printf "%b" $line_end
@@ -113,7 +100,7 @@ display_resources(){
 		selected_resource=${resources[$selected_line]}
 
 		case $key in
-			'q') echo QUITTING ; exit ;;
+			'q') echo -e "\n\nQuitting" ; exit ;;
 			# up: move selector up
 			'[A') (( selected_line > 0 )) && (( selected_line-- )) ;; 
 			# down: move selector down
@@ -155,20 +142,14 @@ main(){
 		if getopts $OPTSTRING option; then
 			case $option in
 				h) 	usage ; exit 1;;
-				d) 	PRINT_DEBUG="TRUE"
-					print_debug -d="TRUE";;
-				m) 	MATCH=$OPTARG
-					print_debug -m=$OPTARG;;
-				p) 	PASSEDARGS=$OPTARG
-					print_debug "-p=\"$OPTARG\"";;
-				?) 	print_debug "? - $OPTARG ${!OPTIND} "
-					local OPTVAL=${!OPTIND}
+				d) 	PRINT_DEBUG="TRUE" ;;
+				m) 	MATCH=$OPTARG ;;
+				p) 	PASSEDARGS=$OPTARG ;;
+				?) 	local OPTVAL=${!OPTIND}
 					# Assume that unidentified flags are for kubectl (PASSEDARGS)
 					PASSEDARGS+=("-$OPTARG")
-
 					# If the next arg is a flag then let getopts handle parsing
 					if [[ ${OPTVAL:0:1} != '-' && -n $OPTVAL ]] ; then
-						print_debug "this is an option '$OPTVAL'"
 						PASSEDARGS+=("$OPTVAL")
 						((OPTIND++))
 					fi;;
@@ -180,6 +161,12 @@ main(){
 		fi
 	done
 	
+	print_debug "DEBUG ENABLED\n"
+	print_debug "MATCHING: \"$MATCH\"\n"
+	print_debug "POSITIONAL ARGS: \"$SCRIPTARGS\"\n"
+	print_debug "PASSED ARGS: \"$PASSEDARGS\"\n"
+	
+	
 	#TODO: add flag for specifying location of kbget 
 	#Exit if kbget not available
 	if [[ ! $(which kbget) ]] ; then
@@ -190,7 +177,8 @@ main(){
 	# Set default resource if none are passed
 	SCRIPTARGS=${SCRIPTARGS[0]-"pod,service,deployment,statefulset"}
 	local KBGET_COMMAND="kbget $SCRIPTARGS -m $MATCH -n -p $PASSEDARGS"
-	print_debug $KBGET_COMMAND
+	print_debug "KBGET COMMAND: $KBGET_COMMAND\n"
+	print_debug "\n"
 	local line resource_list=() 
 	
 	while read line; do
